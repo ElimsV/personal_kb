@@ -12,10 +12,11 @@
 personal_kb/
 ├── AGENTS.md                    # Codex 的仓库级行为规则
 ├── inbox/                       # 待处理材料
+├── ingest_runs/YYYY/            # 每次入库的决策、写入与验证记录
 ├── sources/YYYY/                # 原始资料快照与出处
 ├── knowledge/<topic>/           # 持续演进的知识节点
 ├── index/catalog.md             # 问题到知识文件的轻量索引
-├── templates/                   # Source / Knowledge 模板
+├── templates/                   # Source / Knowledge / Ingest Run 模板
 └── .agents/skills/personal-kb/  # INGEST / ASK / REVIEW 工作流
 ~~~
 
@@ -31,6 +32,8 @@ https://mp.weixin.qq.com/s/文章链接
 结合我的知识库，分析我该如何改善和金钱的关系。
 
 复查“心理预演”主题，列出现有结论、来源、冲突和证据缺口。
+
+复查 ingest_runs/2026/2026-08-16-wechat-five-articles.md，检查候选命题和节点匹配是否合理。
 ~~~
 
 也可以沿用三种简短意图：
@@ -80,13 +83,18 @@ $personal-kb /review 财富、价值创造与信任
 
 ~~~text
 读取资料
-→ 保存 Source 快照
 → 搜索现有 Knowledge
+→ 持久化候选命题决策表
 → 逐条判断 IGNORE / CREATE / REINFORCE / UPDATE / CONFLICT
+→ 保存 Source 快照
 → 更新 Knowledge
 → 更新 catalog
-→ 检查差异与来源链
+→ 记录写入映射、质量信号与验证结果
 ~~~
+
+每次 INGEST 都会在 `ingest_runs/YYYY/` 留下可审查记录。它展示资料如何被拆成候选命题、与哪些已有节点匹配、为何创建或忽略、最终改了哪些文件，以及还有哪些弱匹配和证据缺口。该目录用于调试入库逻辑，不参与默认 ASK 召回。
+
+统一校验还会聚合各次运行的 CREATE 比例、弱匹配、单一来源新建、外部验证覆盖和警告数量，用于判断知识库是否正在无序膨胀。
 
 ### ASK
 

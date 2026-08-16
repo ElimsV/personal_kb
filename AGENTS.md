@@ -39,6 +39,7 @@
 ## 写入规则
 
 - 收到入库请求时，必须使用 .agents/skills/personal-kb/SKILL.md。
+- 所有会修改 ingest_runs/、sources/、knowledge/ 或 index/catalog.md 的 INGEST 都必须遵守仓库写锁；资料抓取可并行，最终决策与知识库写入必须串行。锁的获取、心跳、释放和异常处理以 Skill 为准。
 - URL 来源必须读取正文而不是只看标题、搜索摘要或转述。若登录、反爬或动态渲染导致正文不完整，应尝试浏览器读取；仍不完整时停止知识更新，请用户粘贴全文、上传文件或导出 PDF。
 - 先搜索 index/catalog.md 和 knowledge/，再决定 IGNORE / CREATE / REINFORCE / UPDATE / CONFLICT。
 - 一篇 Source 可以支持多个 Knowledge；多篇 Source 也可以共同维护一个 Knowledge。
@@ -47,6 +48,8 @@
 - 用户直接提供或拥有权利的内容可以保存完整快照；第三方公开网页默认只保存出处、结构化内容摘要和必要的短引用，不复制整篇受版权保护的正文。
 - Knowledge 写入 knowledge/<topic>/；每个文件只维护一个可独立理解的核心命题。
 - 每次 Knowledge 变化都更新演进记录，并同步 index/catalog.md。
+- 每次 INGEST 都在 ingest_runs/YYYY/ 保存运行日志，包括完整候选命题决策表、写入映射、质量信号、失败与验证结果；即使全部 IGNORE 或抓取失败也要留痕。
+- 已完成运行日志保留原始决策。复查后的修正追加带日期的 Review 记录，或新建通过 retry_of 关联的运行日志，不静默改写原决策。
 - 不把作者观点自动升级为事实，不补写来源中没有的内容，不用故事、类比或个案替代证据。
 - 未经用户明确要求，不自动提交 Git，不推送远端。
 - 用户对已有认知的补充、修正或反对意见也应先保存为新的 user_reflection Source，再更新 Knowledge；不要回写或删除旧 Source。
@@ -54,10 +57,11 @@
 ## 目录职责
 
 - inbox/：待处理材料，可被清空，不是长期知识。
+- ingest_runs/：持久化的入库运行记录，用于复查决策、调试流程和观察质量趋势，不参与默认知识召回。
 - sources/：不可变的来源快照与出处信息。
 - knowledge/：持续演进的当前认知节点。
 - index/catalog.md：面向问题召回知识的轻量索引。
-- templates/：Source 与 Knowledge 的统一格式。
+- templates/：Source、Knowledge 与 Ingest Run 的统一格式。
 - .agents/skills/personal-kb/：INGEST、ASK、REVIEW 的操作流程。
 
 ## 质量底线

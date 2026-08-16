@@ -15,37 +15,55 @@ Infer the mode from the request:
 - Choose INGEST for a message containing only one http/https URL unless the user gives a different intent.
 - Choose ASK for /ask, “结合我的知识库回答”, or a question that should use existing knowledge.
 - Choose REVIEW for /review, “复查主题”, “检查冲突/来源/时效”, or a knowledge audit.
+- Choose REVIEW when the user wants to inspect an Ingest Run, candidate decisions, node matching, or knowledge-base growth quality.
 - If a request mixes modes, finish read-only review before making ingest changes.
 
 Use the repository root that contains this Skill. Read AGENTS.md before acting.
 
 ## INGEST
 
-1. Read every supplied source completely. Do not rely on a filename, excerpt, or summary when the full material is available.
-2. Read index/catalog.md, then search knowledge/ for similar titles, questions, keywords, conclusions, and mechanisms.
+1. Acquire and normalize every supplied source before changing the repository:
+   - batch independent retrieval and parsing when several sources are supplied;
+   - preserve one local normalized body plus a compact manifest containing provenance, completeness, and hash;
+   - load each complete normalized body into model context once; reuse the manifest and extracted propositions instead of printing or reading the same body again;
+   - do not rely on prompt caching for correctness or context control.
+2. Read index/catalog.md, then search knowledge/ for similar questions, conclusions, and mechanisms. Use titles and keywords only as recall aids.
 3. Assess the material before extraction:
    - identify source type, author, date, completeness, first-hand versus second-hand status;
    - separate factual claims, empirical claims, methods, opinions, stories, analogies, and the source author's inferences;
    - record missing evidence and foreseeable harms.
 4. Extract only durable candidate propositions that can stand alone and improve future decisions.
-5. Assign exactly one decision to each candidate:
+5. Draft one candidate decision row per proposition before writing. Assign exactly one decision:
    - IGNORE: no durable value, pure repetition, or too weak to retain;
    - CREATE: a distinct reusable proposition does not yet exist;
    - REINFORCE: add support, explanation, application, or confidence to an existing node;
    - UPDATE: revise the conclusion, boundary, confidence, status, or method;
    - CONFLICT: retain a material contradiction without forcing false consensus.
-6. Create one immutable Source snapshot under sources/YYYY/. Include provenance, import date, original location or URL, and a content hash when available. Do not silently rewrite a stored Source; create a new version if the source changes.
-7. Create or edit Knowledge files under knowledge/<topic>/ using templates/knowledge.md:
+6. Before final matching or any repository write, acquire the exclusive lock:
+   - run `python3 .agents/skills/personal-kb/scripts/ingest_lock.py acquire` and retain the returned owner token;
+   - if another writer holds the lock, do not mutate the repository; wait or report the owner and lock age;
+   - after acquiring it, re-read catalog.md and every matched Knowledge target, then revise the decision table against this current state;
+   - run `heartbeat --owner <token>` before each write batch and `release --owner <token>` after validation, including after a recoverable failure;
+   - never clear a suspected stale lock without user approval. ASK and REVIEW do not take the lock.
+7. Create `ingest_runs/YYYY/YYYY-MM-DD-short-slug.md` from templates/ingest-run.md and set `status: planned`. Persist the final candidate table with: `ID | 候选命题 | Source IDs | 证据强度 | 已有匹配与实质变化 | 决策 | 目标 | 理由`. Record every candidate, including IGNORE, and never fabricate unavailable time, token, cache, or context-load telemetry.
+8. Write in small, reviewable stages: new Source snapshots first, one Knowledge node at a time, and catalog.md last. Re-read an existing target immediately before editing it; do not use one giant patch for the whole ingest.
+9. Create one immutable Source snapshot under sources/YYYY/. Include provenance, import date, original location or URL, and a content hash when available. Do not silently rewrite a stored Source; create a new version if the source changes.
+10. Create or edit Knowledge files under knowledge/<topic>/ using templates/knowledge.md:
    - keep one central proposition per file;
    - write a usable current conclusion, not an article summary;
    - distinguish source claims from the knowledge-base judgment;
    - include application, boundaries, counterarguments, confidence, freshness, sources, and an evolution record;
    - record verification_scope and external_evidence_status so Source consistency is not mistaken for external validation;
    - never promote a claim to fact solely because it appears in a saved source.
-8. Update index/catalog.md for every created, renamed, materially changed, disputed, deprecated, or superseded Knowledge node.
-9. Verify every Source and Knowledge link, check the full Git diff with readable Chinese paths, and confirm no unrelated files changed.
-10. Report:
+11. Update index/catalog.md for every created, renamed, materially changed, disputed, deprecated, or superseded Knowledge node.
+12. Fill the run log with the actual write mapping, decision counts, weak matches, evidence gaps, and unavailable telemetry while keeping `status: planned` and `validation_status: not_run`. Run `python3 .agents/skills/personal-kb/scripts/validate_kb.py`; record the result, set the run to `completed` or `failed`, and run the same command once more to validate the finalized log. Inspect the full Git diff with readable Chinese paths and confirm no unrelated files changed.
+13. Preserve observability:
+    - create a run log even when capture is blocked, all candidates are IGNORE, or validation fails;
+    - keep the original decision table visible; after finalization, record corrections as dated review notes or create a new run linked by `retry_of` instead of silently rewriting history;
+    - use run metrics to watch CREATE rate, weak-match count, single-source CREATEs, evidence coverage, and validation warnings over time.
+14. Report:
     - the Source snapshot;
+    - the Ingest Run log;
     - decisions and affected Knowledge nodes;
     - important evidence boundaries or unresolved conflicts;
     - verification performed.
@@ -55,9 +73,9 @@ Do not commit or push unless the user explicitly asks.
 ### Ingest a URL
 
 1. Preserve the submitted URL, then derive a canonical URL only for duplicate detection.
-2. Open the page and obtain the rendered article body plus title, author or account, publication date, and retrieval date.
-3. For mp.weixin.qq.com or another dynamically rendered or login-gated page, use an interactive browser when normal page retrieval is incomplete.
-4. Never infer an article from a title, search snippet, repost summary, or comments. If the body remains partial or blocked, stop before changing Knowledge and ask the user to paste the text or upload an export/PDF.
+2. Try normal retrieval once and check for the rendered article body plus title, author or account, publication date, and retrieval date.
+3. If mp.weixin.qq.com or another dynamic/login-gated page is incomplete, switch directly to an interactive browser. Do not repeat equivalent fetch methods that return the same partial page.
+4. If browser retrieval is still partial or blocked, stop before changing Knowledge and ask the user to paste the text or upload an export/PDF. Never infer an article from a title, search snippet, repost summary, or comments.
 5. Search existing Source metadata for the canonical URL and content hash before creating a new Source.
 6. Set original_url, canonical_url, retrieved_at, capture_mode, access_status, content_sha256, and content_hash_scope when available.
 7. For third-party public webpages, store provenance, a structured content digest, and only short necessary quotations. Store complete text only when the user supplied it directly or confirms they own or may archive it.
@@ -85,7 +103,7 @@ Do not commit or push unless the user explicitly asks.
 
 ## REVIEW
 
-1. Search index/catalog.md and knowledge/ for the topic, synonyms, related questions, and linked nodes.
+1. For a topic review, search index/catalog.md and knowledge/ for the topic, synonyms, related questions, and linked nodes. For an ingest-quality review, open the relevant ingest_runs/ log and follow its Source and Knowledge links.
 2. Read the selected Knowledge nodes and all Source files needed to verify their provenance.
 3. Produce a topic audit containing:
    - current best conclusion;
@@ -94,7 +112,8 @@ Do not commit or push unless the user explicitly asks.
    - unresolved conflicts;
    - stale or weakly sourced claims;
    - missing viewpoints and next verification steps.
-4. Recommend KEEP, MERGE, UPDATE, DISPUTE, DEPRECATE, or VERIFY, but keep the review read-only unless the user authorizes changes.
+4. When reviewing an Ingest Run, also audit candidate completeness, evidence calibration, existing-node match, decision type, write mapping, CREATE rate, weak matches, and whether IGNORE discarded useful knowledge.
+5. Recommend KEEP, MERGE, UPDATE, DISPUTE, DEPRECATE, VERIFY, or REPROCESS, but keep the review read-only unless the user authorizes changes. If authorized, append a dated Review record or create a new run linked by retry_of; preserve the original decision table.
 
 ## Metadata vocabulary
 
